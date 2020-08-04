@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "v2ex"
+version = "0.1.0"
+description = ""
+authors = ["j178 <10510431+j178@users.noreply.github.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+httpx = "^0.13.3"
+beautifulsoup4 = "^4.9.1"
+pyotp = "^2.4.0"
+lxml = "^4.5.2"
+pillow = "^7.2.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+
+[[tool.poetry.source]]
+name = 'aliyun'
+url = 'https://mirrors.aliyun.com/pypi/simple/'
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
