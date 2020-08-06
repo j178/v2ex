@@ -149,7 +149,7 @@ def _get_once(text: str):
         return match.group(1)
 
 
-def client_from_cookie(A2, A2O=None) -> httpx.AsyncClient:
+def client_from_cookies(A2, A2O=None) -> httpx.AsyncClient:
     cookies = {
         'A2': A2,
         # 开启 2FA 之后需要 A2O
@@ -272,7 +272,7 @@ def test_signin():
 def test_redeem():
     A2 = os.environ['A2']
     A2O = os.environ.get('A2O')
-    client = client_from_cookie(A2, A2O)
+    client = client_from_cookies(A2, A2O)
     asyncio.run(redeem_daily_mission(client))
 
 
