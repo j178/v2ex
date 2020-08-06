@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # Created by johnj at 2020/8/4
+import httpx
 import io
 import logging
 import os
-import httpx
 from typing import Optional
 
 from v2ex.api import Notification, get_notifications, get_notifications_after
@@ -76,5 +76,5 @@ async def notify_notifications(client: httpx.AsyncClient):
             new_last_check_id = notify.id
     finally:
         if new_last_check_id:
-            await save_last_check_id(new_last_check_id)
+            await save_last_check_id(client, new_last_check_id)
             logging.info(f'Update last check id to {new_last_check_id}')

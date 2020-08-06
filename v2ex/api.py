@@ -2,22 +2,22 @@
 # Created by johnj at 2020/7/28
 
 import asyncio
-import enum
-import io
 import logging
 import os
 import re
 import typing
-from dataclasses import dataclass
 from typing import Callable, Optional, Tuple
 
 import httpx
 from bs4 import BeautifulSoup as _BeautifulSoup, NavigableString
 
+from v2ex.errors import Need2FA, NeedLogin, SigninFailed
+from v2ex.models import NotifyType, Notification
+
 if typing.TYPE_CHECKING:
     from pyotp import TOTP, HOTP
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s]:%(lineno)d %(message)s')
+log = logging.getLogger(__name__)
 
 default_headers = {
     'referer': 'https://www.v2ex.com/',
@@ -26,62 +26,7 @@ default_headers = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36'
 }
 
-BeautifulSoup = lambda text, features='lxml': _BeautifulSoup(text, features=features)
-
-
-class Error(Exception):
-    def __init__(self, message):
-        self.message = message
-
-
-class NeedLogin(Error):
-    pass
-
-
-class Need2FA(Error):
-    pass
-
-
-class SigninFailed(Error):
-    pass
-
-
-class NotifyType(enum.Enum):
-    THANK = 'thank'
-    MENTION = 'mention'
-    REPLY = 'reply'
-    FAVORITE = 'favorite'
-    OTHER = 'other'
-
-
-@dataclass()
-class Notification:
-    id: int
-    time: str
-    thread: str
-    content: str
-    author: str
-    type: NotifyType
-    content_link: str
-
-    def __str__(self):
-        if self.type == NotifyType.MENTION:
-            left = '在回复'
-            right = '时提到了你'
-        elif self.type == NotifyType.REPLY:
-            left = '在'
-            right = '里回复了你'
-        elif self.type == NotifyType.FAVORITE:
-            left = '收藏了你发布的主题'
-            right = ''
-        elif self.type == NotifyType.THANK:
-            left = '感谢了你在主题'
-            right = '里的回复'
-        else:
-            left = ''
-            right = ''
-        return f'{self.id} [{self.author}] {left} "{self.thread}" {right} ({self.time})' \
-               f'{": " + self.content if right else ""}'
+BeautifulSoup = lambda text: _BeautifulSoup(text, features='lxml')
 
 
 def logged_in(response):
@@ -107,10 +52,10 @@ async def get_notifications(client: httpx.AsyncClient, start_page: int = 1, limi
             break
 
         try:
-            logging.info(f'Fetching page {page}')
+            log.info(f'Fetching page {page}')
             resp = await client.get('/notifications', params={'p': page})
         except Exception:
-            logging.exception('Request failed')
+            log.exception('Request failed')
             return
 
         soup = BeautifulSoup(resp.text)
@@ -169,32 +114,32 @@ async def redeem_daily_mission(client: httpx.AsyncClient) -> Optional[Tuple[int,
     """每日登录奖励
     返回 (连续登录天数，(金币，银币，铜币))
     """
-    logging.info('Requesting daily mission page')
+    log.info('Requesting daily mission page')
     resp = await client.get('/mission/daily')
     check_session(resp)
 
     if '每日登录奖励已领取' not in resp.text:
         # 不带 V2EX_XXX 相关的 cookie, 会返回浏览器有问题
         once = _get_once(resp.text)
-        logging.info('Redeeming daily mission')
+        log.info('Redeeming daily mission')
         resp = await client.get('/mission/daily/redeem',
                                 params={'once': once})
         check_session(resp)
 
         if '已成功领取每日登录奖励' not in resp.text:
-            logging.error(f'Redeem failed: {resp.text}')
+            log.error(f'Redeem failed: {resp.text}')
             return None
 
     match = re.search(r'已连续登录 (\d+) 天', resp.text, re.I)
     days = int(match.group(1))
 
-    soup = BeautifulSoup(resp.text, features='lxml')
+    soup = BeautifulSoup(resp.text)
     archor = soup.find(id='money').a
     balance = archor.get_text()
     balance = list(int(m) for m in balance.split())
     balance = [0] * (3 - len(balance)) + balance
 
-    logging.info(f'Consective mission days: {days}, balance: {balance}')
+    log.info(f'Consective mission days: {days}, balance: {balance}')
     return days, tuple(balance)
 
 
@@ -267,12 +212,12 @@ async def signin(
         raise SigninFailed('Too many logins')
 
     once = _get_once(resp.text)
-    soup = BeautifulSoup(resp.text, 'lxml')
+    soup = BeautifulSoup(resp.text)
     username_field = soup.find('input', {'placeholder': '用户名或电子邮箱地址'}).get('name')
     password_field = soup.find('input', {'type': 'password'}).get('name')
     captcha_field = soup.find('input', {'placeholder': '请输入上图中的验证码'}).get('name')
     captcha = await get_captcha(client, f'/_captcha?once={once}')
-    logging.info(f'Recognized captcha as {captcha}')
+    log.info(f'Recognized captcha as {captcha}')
 
     data = {
         'next': '/',
@@ -306,7 +251,7 @@ async def signin(
     member_re = re.compile(r'/member/([^"]+)', re.I)
     who = soup.find('a', {'href': member_re})
     who = member_re.search(who.get('href')).group(1)
-    logging.info(f'Succeed sign in as {who}')
+    log.info(f'Succeed sign in as {who}')
 
 
 def test_signin():
