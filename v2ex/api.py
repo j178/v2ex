@@ -5,7 +5,7 @@ import logging
 import re
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from typing import AsyncIterator, Awaitable, Callable, Dict, Optional, Tuple, Union
+from typing import AsyncIterator, Awaitable, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
 import httpx
 from bs4 import BeautifulSoup as _BeautifulSoup, NavigableString
@@ -49,6 +49,13 @@ def _get_once(text: str):
 @dataclass
 class Base:
     client: InitVar[httpx.AsyncClient] = None
+    url_prefix: ClassVar[str]
+
+    @classmethod
+    async def from_id(cls, id: str, client: httpx.AsyncClient):
+        data = await client.get(cls.url_prefix)
+        o = cls(data)
+        return o
 
     def __post_init__(self, client):
         self._client = client
@@ -94,6 +101,9 @@ class Topic(Base):
 
     async def replies(self) -> AsyncIterator['Reply']:
         pass
+
+    async def reply(self, content: str, reply_to: Union['Reply', str] = None):
+        """回复主题"""
 
 
 class NotifyType(enum.Enum):
@@ -244,29 +254,46 @@ class Me(Member):
 
         return me
 
-    async def create_topic(self, title: str, content: str, node: 'Node') -> 'Topic':
-        pass
+    @classmethod
+    async def anonymous(cls):
+        """未登录用户"""
+        client = cls._init_signin_client()
+        return cls(client=client)
 
-    async def redeem_daliy_mission(self) -> Optional[Tuple[int, Tuple[int, ...]]]:
+    async def create_topic(self, title: str, content: str, node: Union['Node', str]) -> 'Topic':
+        if isinstance(node, str):
+            node = Node.from_id(node, client=self._client)
+
+        return await node.create_topic(title, content)
+
+    async def create_reply(self, content: str, topic: Union['Topic', str]) -> Reply:
+        if isinstance(topic, str):
+            topic = Topic.from_id(topic, client=self._client)
+
+        return await topic.reply(content)
+
+    async def redeem_daliy_mission(self) -> bool:
         """每日登录奖励
         返回 (连续登录天数，(金币，银币，铜币))
         """
         log.info('Requesting daily mission page')
-        client = self._client
-        resp = await client.get('/mission/daily')
+        resp = await self._client.get('/mission/daily')
         check_session(resp)
 
+        redeemed = False
         if '每日登录奖励已领取' not in resp.text:
             # 不带 V2EX_XXX 相关的 cookie, 会返回浏览器有问题
             once = _get_once(resp.text)
             log.info('Redeeming daily mission')
-            resp = await client.get('/mission/daily/redeem',
-                                    params={'once': once})
+            resp = await self._client.get('/mission/daily/redeem',
+                                          params={'once': once})
             check_session(resp)
 
             if '已成功领取每日登录奖励' not in resp.text:
                 log.error(f'Redeem failed: {resp.text}')
-                return None
+                return False
+            else:
+                redeemed = True
 
         match = re.search(r'已连续登录 (\d+) 天', resp.text, re.I)
         days = int(match.group(1))
@@ -278,7 +305,7 @@ class Me(Member):
         balance = [0] * (3 - len(balance)) + balance
 
         log.info(f'Consective mission days: {days}, balance: {balance}')
-        return days, tuple(balance)
+        return redeemed
 
     async def notifications(self, start_page: int = 1, limit: int = None) -> AsyncIterator['Notification']:
         count = 0
@@ -337,12 +364,24 @@ class Me(Member):
 
             page += 1
 
-    async def notifications_after(self, notify_id: int):
+    async def notifications_after(self, notify_id: int) -> AsyncIterator['Notification']:
         async for notify in self.notifications():
             if notify.id > notify_id:
                 yield notify
             else:
                 break
+
+    async def recent_topics(self) -> AsyncIterator['Topic']:
+        """/recent 是不分节点的、全站的最新主题"""
+        yield Topic(client=self._client)
+
+    async def nodes(self) -> List[Topic]:
+        """所有节点"""
+        return [Node(client=self._client)]
+
+    async def node_topics(self, node: Union[str, Node] = None) -> AsyncIterator['Topic']:
+        """获取某个节点的新主题"""
+        yield Topic(client=self._client)
 
 # 1. partial init, 即先只使用部分数据实例化对象，之后需要访问更多信息时再加载，完整填充数据
 # 2. generator list 的获取 API a) 提供无限获取的 generator b) 提供 time, count 控制
