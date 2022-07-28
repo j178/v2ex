@@ -10,7 +10,7 @@ httpx = "^0.23.0"
 beautifulsoup4 = "^4.9.1"
 pyotp = "^2.4.0"
 lxml = "^4.9.1"
-pillow = "^7.2.0"
+pillow = "^9.0.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
