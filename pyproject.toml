@@ -6,7 +6,7 @@ authors = ["j178 <10510431+j178@users.noreply.github.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-httpx = "^0.13.3"
+httpx = "^0.23.0"
 beautifulsoup4 = "^4.9.1"
 pyotp = "^2.4.0"
 lxml = "^4.5.2"
